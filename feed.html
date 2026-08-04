@@ -67,6 +67,37 @@
     object-fit:cover;
   }
 
+  .play-overlay{
+    position:absolute;
+    inset:0;
+    z-index:8;
+    background:rgba(0,0,0,.35);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+    cursor:pointer;
+  }
+  .play-overlay.hidden{ display:none; }
+  .play-icon{
+    width:64px;
+    height:64px;
+    border-radius:50%;
+    background:rgba(255,255,255,.18);
+    border:2px solid #fff;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:26px;
+    padding-left:5px;
+  }
+  .play-text{
+    font-size:13px;
+    font-weight:600;
+    text-shadow:0 1px 4px rgba(0,0,0,.6);
+  }
+
   .card-info{
     position:absolute;
     left:12px;
@@ -383,6 +414,10 @@
     div.dataset.id = v.id;
     div.innerHTML = `
       <video src="${v.videoData}" ${v.poster ? `poster="${v.poster}"` : ""} playsinline loop muted preload="auto"></video>
+      <div class="play-overlay" data-action="startVideo">
+        <div class="play-icon">▶</div>
+        <div class="play-text">Нажмите, чтобы начать видео</div>
+      </div>
       ${isOwn ? `
         <button class="options-btn" data-action="toggleMenu" data-id="${v.id}">⋮</button>
         <div class="options-menu" id="menu-${v.id}">
@@ -431,11 +466,16 @@
 
   const feedObserver = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
-      const vid = entry.target.querySelector("video");
+      const card = entry.target;
+      const vid = card.querySelector("video");
       if (!vid) return;
       if (entry.isIntersecting){
-        if (audioUnlocked) vid.muted = false;
-        vid.play().catch(()=>{});
+        // автовоспроизведение только для видео, которое пользователь уже
+        // сам запускал раньше — для новых показываем оверлей "нажмите, чтобы начать"
+        if (vid.dataset.started === "1"){
+          if (audioUnlocked) vid.muted = false;
+          vid.play().catch(()=>{});
+        }
       } else {
         vid.pause();
       }
@@ -481,6 +521,19 @@
   // делегирование кликов — один обработчик на всю ленту, работает для любых
   // карточек, включая те, что появятся позже
   document.getElementById("feed").addEventListener("click", async (e) => {
+    const overlay = e.target.closest("[data-action='startVideo']");
+    if (overlay){
+      const card = overlay.closest(".video-card");
+      const vid = card.querySelector("video");
+      // прямой клик пользователя — браузер точно разрешит звук именно здесь
+      vid.muted = false;
+      vid.dataset.started = "1";
+      vid.play().catch(()=>{});
+      overlay.classList.add("hidden");
+      audioUnlocked = true;
+      return;
+    }
+
     const video = e.target.closest("video");
     if (video){
       if (video.paused) video.play().catch(()=>{});

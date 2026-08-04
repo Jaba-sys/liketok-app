@@ -139,17 +139,13 @@
 <script>
   firebase.initializeApp(firebaseConfig);
   const db = firebase.database();
-
-  // хеш пароля администратора — сам пароль в коде не хранится
   const ADMIN_HASH = "f5543e1d4cc58dc1baeea9655e45393fe7f876c6a86f6644ab3a018db49ee334";
-
   async function sha256(text){
     const enc = new TextEncoder().encode(text);
     const buf = await crypto.subtle.digest("SHA-256", enc);
     return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,"0")).join("");
   }
-
-  let mode = "login"; // login | register
+  let mode = "login"; 
   const tabLogin = document.getElementById("tabLogin");
   const tabRegister = document.getElementById("tabRegister");
   const submitBtn = document.getElementById("submitBtn");
@@ -168,7 +164,6 @@
     submitBtn.textContent = "Зарегистрироваться";
     document.getElementById("err").textContent = "";
   });
-
   document.getElementById("authForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const errEl = document.getElementById("err");

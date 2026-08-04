@@ -1,0 +1,13 @@
+{
+  "rules": {
+    "users": {
+      ".read": true,
+      ".write": true
+    },
+    "videos": {
+      ".read": true,
+      ".write": true,
+      ".indexOn": ["author", "createdAt"]
+    }
+  }
+}

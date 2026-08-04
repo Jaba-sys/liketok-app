@@ -213,6 +213,13 @@
     background:#000;
     display:none;
   }
+  #recCanvas{
+    width:100%;
+    max-height:420px;
+    border-radius:12px;
+    background:#000;
+    display:none;
+  }
   .rec-controls{
     display:flex;
     gap:10px;
@@ -334,7 +341,8 @@
   <div class="record-modal">
     <button class="modal-close" id="closeModalBtn">✕</button>
     <div class="limit-text" id="limitText">Загрузка...</div>
-    <video id="recPreview" autoplay muted playsinline></video>
+    <video id="recPreview" autoplay muted playsinline style="display:none;"></video>
+    <canvas id="recCanvas" width="480" height="854"></canvas>
     <video id="preview" controls playsinline></video>
     <div class="rec-timer" id="recTimer"></div>
     <div class="rec-controls" id="recControls">
@@ -428,7 +436,15 @@
     updateLimitText();
   });
   document.getElementById("closeModalBtn").addEventListener("click", () => {
+    if (mediaRecorder && mediaRecorder.state !== "inactive"){
+      mediaRecorder.onstop = null; // не запускаем показ превью, просто обрываем
+      mediaRecorder.stop();
+    }
+    cancelAnimationFrame(drawLoopId);
+    clearTimeout(recordTimeout);
+    clearInterval(recordInterval);
     stopCameraIfActive();
+    recCanvas.style.display = "none";
     recordModal.classList.remove("show");
   });
 
@@ -441,16 +457,47 @@
 
   const startBtn = document.getElementById("startBtn");
   const recPreview = document.getElementById("recPreview");
+  const recCanvas = document.getElementById("recCanvas");
+  const canvasCtx = recCanvas.getContext("2d");
   const preview = document.getElementById("preview");
   const recTimer = document.getElementById("recTimer");
   const recControls = document.getElementById("recControls");
   const postControls = document.getElementById("postControls");
   const captionInput = document.getElementById("caption");
+  let drawLoopId = null;
+
+  function drawFrame(){
+    // центрируем и обрезаем кадр камеры под вертикальный формат холста (как object-fit: cover)
+    const vw = recPreview.videoWidth;
+    const vh = recPreview.videoHeight;
+    if (vw && vh){
+      const canvasRatio = recCanvas.width / recCanvas.height;
+      const videoRatio = vw / vh;
+      let sx, sy, sw, sh;
+      if (videoRatio > canvasRatio){
+        sh = vh;
+        sw = vh * canvasRatio;
+        sx = (vw - sw) / 2;
+        sy = 0;
+      } else {
+        sw = vw;
+        sh = vw / canvasRatio;
+        sx = 0;
+        sy = (vh - sh) / 2;
+      }
+      canvasCtx.save();
+      canvasCtx.translate(recCanvas.width, 0);
+      canvasCtx.scale(-1, 1); // зеркалим, как в обычной фронтальной камере
+      canvasCtx.drawImage(recPreview, sx, sy, sw, sh, 0, 0, recCanvas.width, recCanvas.height);
+      canvasCtx.restore();
+    }
+    drawLoopId = requestAnimationFrame(drawFrame);
+  }
 
   startBtn.addEventListener("click", async () => {
     try{
       mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 480, height: 854, facingMode: "user" },
+        video: { facingMode: "user" },
         audio: true
       });
     } catch(e){
@@ -458,17 +505,25 @@
       return;
     }
     recPreview.srcObject = mediaStream;
-    recPreview.style.display = "block";
+    recCanvas.style.display = "block";
     preview.style.display = "none";
+    await recPreview.play();
+    drawFrame();
+
+    // записываем именно вертикальный холст + звук с микрофона
+    const canvasStream = recCanvas.captureStream(30);
+    const audioTracks = mediaStream.getAudioTracks();
+    const recordStream = new MediaStream([...canvasStream.getVideoTracks(), ...audioTracks]);
 
     let chunks = [];
     let mimeType = "video/webm;codecs=vp8,opus";
     if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = "video/webm";
-    mediaRecorder = new MediaRecorder(mediaStream, { mimeType, videoBitsPerSecond: 700000 });
+    mediaRecorder = new MediaRecorder(recordStream, { mimeType, videoBitsPerSecond: 700000 });
     mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
     mediaRecorder.onstop = () => {
       recordedBlob = new Blob(chunks, { type: "video/webm" });
-      recPreview.style.display = "none";
+      recCanvas.style.display = "none";
+      cancelAnimationFrame(drawLoopId);
       preview.src = URL.createObjectURL(recordedBlob);
       preview.style.display = "block";
       captionInput.style.display = "block";

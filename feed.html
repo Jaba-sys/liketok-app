@@ -111,6 +111,49 @@
   }
   .side-btn.liked .icon{ color:var(--pink); }
 
+  /* --- меню "три точки" для собственных видео --- */
+  .options-btn{
+    position:absolute;
+    top:64px;
+    right:10px;
+    z-index:6;
+    background:rgba(0,0,0,.4);
+    border:none;
+    color:#fff;
+    width:34px;
+    height:34px;
+    border-radius:50%;
+    font-size:20px;
+    font-weight:800;
+    cursor:pointer;
+    line-height:1;
+  }
+  .options-menu{
+    position:absolute;
+    top:102px;
+    right:10px;
+    z-index:6;
+    background:#26283a;
+    border-radius:10px;
+    overflow:hidden;
+    box-shadow:0 6px 18px rgba(0,0,0,.4);
+    display:none;
+  }
+  .options-menu.show{ display:block; }
+  .options-menu button{
+    display:block;
+    width:100%;
+    padding:10px 16px;
+    background:none;
+    border:none;
+    color:#ff8a8a;
+    font-size:13px;
+    text-align:left;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .options-menu button:hover{ background:rgba(255,255,255,.06); }
+
   /* --- мобильные телефоны: чуть уже колонка текста, чуть выше действия --- */
   @media (max-width: 480px){
     .card-info{
@@ -591,10 +634,9 @@
 
   async function updateLimitText(){
     const count = await countTodayUploads();
-    const left = Math.max(0, DAILY_LIMIT - count);
-    document.getElementById("limitText").textContent =
-      `Сегодня загружено: ${count} / ${DAILY_LIMIT}. Осталось: ${left}`;
-    startBtn.disabled = left <= 0;
+    document.getElementById("limitText").textContent = count >= DAILY_LIMIT
+      ? `Сегодня загружено: ${count} / ${DAILY_LIMIT}. При публикации самое старое видео за сутки будет удалено.`
+      : `Сегодня загружено: ${count} / ${DAILY_LIMIT}`;
   }
 
   async function freeUpSpaceIfNeeded(newBytes){
@@ -617,19 +659,35 @@
     }
   }
 
+  async function enforceDailyLimit(){
+    // если у автора уже DAILY_LIMIT видео за последние 24ч — удаляем самое старое из них,
+    // чтобы освободить место для нового (вместо блокировки загрузки)
+    const snap = await videosRef.orderByChild("author").equalTo(username).get();
+    if (!snap.exists()) return;
+    const now = Date.now();
+    let recent = [];
+    snap.forEach(child => {
+      const v = child.val();
+      if (now - v.createdAt < 24*60*60*1000) recent.push({ id: child.key, createdAt: v.createdAt });
+    });
+    if (recent.length >= DAILY_LIMIT){
+      recent.sort((a,b) => a.createdAt - b.createdAt);
+      const toRemove = recent.length - DAILY_LIMIT + 1;
+      for (let i = 0; i < toRemove; i++){
+        await videosRef.child(recent[i].id).remove();
+      }
+    }
+  }
+
   document.getElementById("postBtn").addEventListener("click", async () => {
     if (!recordedBlob) return;
-    const count = await countTodayUploads();
-    if (count >= DAILY_LIMIT){
-      alert("Дневной лимит видео исчерпан (" + DAILY_LIMIT + " в день)");
-      return;
-    }
     const postBtn = document.getElementById("postBtn");
     postBtn.disabled = true;
     postBtn.textContent = "Публикация...";
 
     try{
       const base64 = await blobToBase64(recordedBlob);
+      await enforceDailyLimit();
       await freeUpSpaceIfNeeded(base64.length);
       await videosRef.push({
         author: username,
@@ -698,9 +756,16 @@
       const likeCount = Object.keys(likes).length;
       const liked = !!likes[username];
       const commentCount = v.comments ? Object.keys(v.comments).length : 0;
+      const isOwn = v.author === username;
       return `
         <div class="video-card" data-id="${v.id}">
           <video src="${v.videoData}" playsinline loop muted></video>
+          ${isOwn ? `
+            <button class="options-btn" data-action="toggleMenu" data-id="${v.id}">⋮</button>
+            <div class="options-menu" id="menu-${v.id}">
+              <button data-action="deleteOwn" data-id="${v.id}">🗑 Удалить видео</button>
+            </div>
+          ` : ""}
           <div class="card-info">
             <div class="author">@${v.author}</div>
             ${v.caption ? `<div class="caption">${escapeHtml(v.caption)}</div>` : ""}
@@ -740,6 +805,24 @@
 
     feedEl.querySelectorAll("[data-action='comments']").forEach(btn => {
       btn.addEventListener("click", () => openComments(btn.dataset.id));
+    });
+
+    feedEl.querySelectorAll("[data-action='toggleMenu']").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const menu = document.getElementById("menu-" + btn.dataset.id);
+        const wasOpen = menu.classList.contains("show");
+        document.querySelectorAll(".options-menu.show").forEach(m => m.classList.remove("show"));
+        if (!wasOpen) menu.classList.add("show");
+      });
+    });
+
+    feedEl.querySelectorAll("[data-action='deleteOwn']").forEach(btn => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        if (!confirm("Удалить это видео насовсем?")) return;
+        await videosRef.child(btn.dataset.id).remove();
+      });
     });
 
     // автовоспроизведение видео, которое сейчас в кадре
@@ -795,6 +878,11 @@
     });
     input.value = "";
   }
+
+  // клик мимо меню "⋮" — закрыть его (слушатель ставим один раз)
+  document.addEventListener("click", () => {
+    document.querySelectorAll(".options-menu.show").forEach(m => m.classList.remove("show"));
+  });
 
   (async function init(){
     await cleanupOldVideos();

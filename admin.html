@@ -86,6 +86,7 @@
   }
   .btn-del{ background:#d64545; }
   .btn-ban-user{ background:#8a4fd6; }
+  .btn-unban{ background:#1fa774; }
   .comments-mini{ margin-top:10px; font-size:12px; color:#666; }
   .comments-mini .c{ padding:4px 0; border-top:1px solid #eee; display:flex; justify-content:space-between; align-items:center; gap:8px; }
   .comments-mini .c button{
@@ -198,6 +199,9 @@
     el.innerHTML = list.map(v => {
       const likeCount = v.likes ? Object.keys(v.likes).length : 0;
       const comments = v.comments ? Object.entries(v.comments).map(([cid,c])=>({cid,...c})) : [];
+      const authorData = currentUsersData[v.author];
+      const now = Date.now();
+      const authorBanned = authorData && authorData.banned && (authorData.banUntil === null || authorData.banUntil > now);
       return `
         <div class="video-row" data-id="${v.id}">
           <video src="${v.videoData}" muted></video>
@@ -207,7 +211,9 @@
             <div class="meta">${timeAgo(v.createdAt)} · ❤️ ${likeCount} · 💬 ${comments.length}</div>
             <div class="video-actions">
               <button class="btn-del" data-action="delVideo" data-id="${v.id}">Удалить видео</button>
-              <button class="btn-ban-user" data-action="banAuthor" data-user="${v.author}">Забанить @${v.author}</button>
+              ${authorBanned
+                ? `<button class="btn-unban" data-action="unbanAuthor" data-user="${v.author}">Разблокировать @${v.author}</button>`
+                : `<button class="btn-ban-user" data-action="banAuthor" data-user="${v.author}">Забанить @${v.author}</button>`}
             </div>
             ${comments.length ? `
               <div class="comments-mini">
@@ -240,12 +246,19 @@
         if (hours === null) return;
         const banUntil = hours.trim() === "" ? null : Date.now() + Number(hours)*3600*1000;
         await usersRef.child(btn.dataset.user).update({ banned: true, banUntil });
-        alert("Пользователь @" + btn.dataset.user + " забанен");
+      });
+    });
+    el.querySelectorAll("[data-action='unbanAuthor']").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        await usersRef.child(btn.dataset.user).update({ banned: false, banUntil: null });
       });
     });
   }
 
-  videosRef.on("value", snap => renderVideos(snap.val()));
+  let currentVideosData = {};
+  let currentUsersData = {};
+  videosRef.on("value", snap => { currentVideosData = snap.val() || {}; renderVideos(currentVideosData); });
+  usersRef.on("value", snap => { currentUsersData = snap.val() || {}; renderVideos(currentVideosData); renderUsers(currentUsersData); });
 
   // --- ПОЛЬЗОВАТЕЛИ ---
   function renderUsers(users){
@@ -298,8 +311,6 @@
       });
     });
   }
-
-  usersRef.on("value", snap => renderUsers(snap.val()));
 </script>
 </body>
 </html>

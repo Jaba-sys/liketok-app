@@ -201,12 +201,32 @@
   .empty{
     height:100%;
     display:flex;
+    flex-direction:column;
     align-items:center;
     justify-content:center;
     color:#888;
     font-size:14px;
     text-align:center;
     padding:0 30px;
+  }
+  .spinner{
+    width:34px;
+    height:34px;
+    border:3px solid #333;
+    border-top-color:var(--pink);
+    border-radius:50%;
+    animation:spin .8s linear infinite;
+  }
+  .spinner.small{
+    width:16px;
+    height:16px;
+    border-width:2px;
+    display:inline-block;
+    vertical-align:middle;
+    margin-right:6px;
+  }
+  @keyframes spin{
+    to{ transform:rotate(360deg); }
   }
   .banned-screen{
     height:100%;
@@ -281,6 +301,8 @@
   }
   .btn-start{ background:var(--pink); }
   .btn-stop{ background:#555; }
+  .btn-pause{ background:#e8a93a; }
+  .btn-finish{ background:#1fa774; }
   .btn-post{ background:linear-gradient(90deg,var(--pink),#ff5c7a); }
   .btn-cancel{ background:#333; }
   button.pill:disabled{ opacity:.4; cursor:not-allowed; }
@@ -373,7 +395,12 @@
   </div>
 </header>
 
-<div id="feed"></div>
+<div id="feed">
+  <div class="empty" id="initialLoader">
+    <div class="spinner"></div>
+    <div style="margin-top:10px;">Загрузка ленты...</div>
+  </div>
+</div>
 
 <div class="bottom-bar">
   <button class="add-btn" id="openRecordBtn">+</button>
@@ -435,7 +462,7 @@
   const usersRef = db.ref("users");
   const videosRef = db.ref("videos");
 
-  const DAILY_LIMIT = 12;
+  const DAILY_LIMIT = 8;
   const MAX_TOTAL_BYTES = 15 * 1024 * 1024;
   const MAX_RECORD_MS = 15000;
   const VIDEO_LIFETIME_MS = 24 * 60 * 60 * 1000;
@@ -452,6 +479,7 @@
   let mediaStream = null;
   let recordTimeout = null;
   let recordInterval = null;
+  let elapsedActiveMs = 0;
   let activeCommentVideoId = null;
   let isBanned = false;
 
@@ -561,7 +589,11 @@
     let chunks = [];
     let mimeType = "video/webm;codecs=vp8,opus";
     if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = "video/webm";
-    mediaRecorder = new MediaRecorder(recordStream, { mimeType, videoBitsPerSecond: 700000 });
+    mediaRecorder = new MediaRecorder(recordStream, {
+      mimeType,
+      videoBitsPerSecond: 700000,
+      audioBitsPerSecond: 128000
+    });
     mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
     mediaRecorder.onstop = () => {
       recordedBlob = new Blob(chunks, { type: "video/webm" });
@@ -575,20 +607,48 @@
       recTimer.textContent = "";
       stopCameraIfActive();
     };
-    mediaRecorder.start();
+    // небольшая "прогревочная" пауза перед стартом — даёт видео- и аудиодорожкам
+    // синхронизироваться, снижает вероятность рассинхрона звука с видео
+    await new Promise(r => setTimeout(r, 250));
+    mediaRecorder.start(500);
 
-    recControls.innerHTML = `<button class="pill btn-stop" id="stopBtn">⏹ Остановить</button>`;
-    document.getElementById("stopBtn").addEventListener("click", stopRecording);
+    recControls.innerHTML = `<button class="pill btn-pause" id="pauseBtn">⏸ Пауза</button><button class="pill btn-finish" id="finishBtn">⏹ Готово</button>`;
+    document.getElementById("pauseBtn").addEventListener("click", pauseRecording);
+    document.getElementById("finishBtn").addEventListener("click", stopRecording);
 
-    let secondsLeft = MAX_RECORD_MS / 1000;
-    recTimer.textContent = `Запись: ${secondsLeft}s`;
+    elapsedActiveMs = 0;
+    updateTimerText();
     recordInterval = setInterval(() => {
-      secondsLeft--;
-      recTimer.textContent = `Запись: ${secondsLeft}s`;
-      if (secondsLeft <= 0) clearInterval(recordInterval);
+      if (mediaRecorder && mediaRecorder.state === "recording"){
+        elapsedActiveMs += 1000;
+        updateTimerText();
+        if (elapsedActiveMs >= MAX_RECORD_MS) stopRecording();
+      }
     }, 1000);
-    recordTimeout = setTimeout(stopRecording, MAX_RECORD_MS);
   });
+
+  function updateTimerText(){
+    const secondsLeft = Math.max(0, Math.round((MAX_RECORD_MS - elapsedActiveMs) / 1000));
+    recTimer.textContent = `Осталось: ${secondsLeft}s`;
+  }
+
+  function pauseRecording(){
+    if (mediaRecorder && mediaRecorder.state === "recording"){
+      mediaRecorder.pause();
+      recControls.innerHTML = `<button class="pill btn-start" id="resumeBtn">▶ Продолжить</button><button class="pill btn-finish" id="finishBtn2">⏹ Готово</button>`;
+      document.getElementById("resumeBtn").addEventListener("click", resumeRecording);
+      document.getElementById("finishBtn2").addEventListener("click", stopRecording);
+    }
+  }
+
+  function resumeRecording(){
+    if (mediaRecorder && mediaRecorder.state === "paused"){
+      mediaRecorder.resume();
+      recControls.innerHTML = `<button class="pill btn-pause" id="pauseBtn2">⏸ Пауза</button><button class="pill btn-finish" id="finishBtn3">⏹ Готово</button>`;
+      document.getElementById("pauseBtn2").addEventListener("click", pauseRecording);
+      document.getElementById("finishBtn3").addEventListener("click", stopRecording);
+    }
+  }
 
   function stopRecording(){
     clearTimeout(recordTimeout);
@@ -683,7 +743,7 @@
     if (!recordedBlob) return;
     const postBtn = document.getElementById("postBtn");
     postBtn.disabled = true;
-    postBtn.textContent = "Публикация...";
+    postBtn.innerHTML = '<span class="spinner small"></span>Публикация...';
 
     try{
       const base64 = await blobToBase64(recordedBlob);
@@ -742,9 +802,10 @@
     if (isBanned) return;
     const feedEl = document.getElementById("feed");
     if (!feedEl) return;
+    const savedScroll = feedEl.scrollTop;
     const list = Object.entries(currentVideos)
       .map(([id, v]) => ({ id, ...v }))
-      .sort((a,b) => b.createdAt - a.createdAt);
+      .sort((a,b) => a.createdAt - b.createdAt); // старые сверху, новые снизу
 
     if (list.length === 0){
       feedEl.innerHTML = '<div class="empty">Пока нет видео.<br>Нажмите «+» внизу, чтобы снять первое! 🎬</div>';
@@ -759,7 +820,7 @@
       const isOwn = v.author === username;
       return `
         <div class="video-card" data-id="${v.id}">
-          <video src="${v.videoData}" playsinline loop muted></video>
+          <video src="${v.videoData}" playsinline loop muted preload="auto"></video>
           ${isOwn ? `
             <button class="options-btn" data-action="toggleMenu" data-id="${v.id}">⋮</button>
             <div class="options-menu" id="menu-${v.id}">
@@ -784,6 +845,8 @@
         </div>
       `;
     }).join("");
+
+    feedEl.scrollTop = savedScroll;
 
     // клик по видео = play/pause, звук включается по тапу (автоплей с звуком браузеры блокируют)
     feedEl.querySelectorAll(".video-card video").forEach(v => {

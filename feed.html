@@ -414,7 +414,7 @@
     div.dataset.id = v.id;
     div.innerHTML = `
       <video src="${v.videoData}" ${v.poster ? `poster="${v.poster}"` : ""} playsinline loop muted preload="auto"></video>
-      <div class="play-overlay" data-action="startVideo">
+      <div class="play-overlay ${audioUnlocked ? "hidden" : ""}" data-action="startVideo">
         <div class="play-icon">▶</div>
         <div class="play-text">Нажмите, чтобы начать видео</div>
       </div>
@@ -441,6 +441,9 @@
       </div>
     `;
     const vid = div.querySelector("video");
+    // если звук уже разблокирован (не первое видео за сессию) — сразу считаем "запущенным",
+    // чтобы оно проигрывалось автоматически без повторного нажатия
+    if (audioUnlocked) vid.dataset.started = "1";
     if (!v.poster){
       vid.addEventListener("loadedmetadata", () => { vid.currentTime = 0.05; }, { once: true });
     }
@@ -529,8 +532,11 @@
       vid.muted = false;
       vid.dataset.started = "1";
       vid.play().catch(()=>{});
-      overlay.classList.add("hidden");
       audioUnlocked = true;
+      // звук разблокирован на всю сессию — прячем оверлей у всех карточек,
+      // остальные видео дальше по ленте будут запускаться сами, без повторного нажатия
+      document.querySelectorAll(".play-overlay").forEach(o => o.classList.add("hidden"));
+      document.querySelectorAll(".video-card video").forEach(v => { v.dataset.started = "1"; });
       return;
     }
 
@@ -626,8 +632,10 @@
   document.addEventListener("click", () => {
     if (audioUnlocked) return;
     audioUnlocked = true;
+    document.querySelectorAll(".play-overlay").forEach(o => o.classList.add("hidden"));
     document.querySelectorAll(".video-card video").forEach(vid => {
       vid.muted = false;
+      vid.dataset.started = "1";
       if (!vid.paused) vid.play().catch(()=>{});
     });
   }, { once: true });

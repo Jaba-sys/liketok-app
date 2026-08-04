@@ -325,6 +325,7 @@
   let currentVideos = {};
   let activeCommentVideoId = null;
   let isBanned = false;
+  let audioUnlocked = false;
 
   usersRef.child(username).on("value", (snap) => {
     if (!snap.exists()) { window.location.href = "index.html"; return; }
@@ -421,15 +422,11 @@
 
     feedEl.scrollTop = savedScroll;
 
-    // клик по видео = включить/выключить звук (видео при этом продолжает играть)
+    // клик по видео = пауза/воспроизведение (пауза останавливает и звук, и картинку)
     feedEl.querySelectorAll(".video-card video").forEach(v => {
       v.addEventListener("click", () => {
-        if (v.muted){
-          v.muted = false;
-          if (v.paused) v.play().catch(()=>{});
-        } else {
-          v.muted = true;
-        }
+        if (v.paused) v.play().catch(()=>{});
+        else v.pause();
       });
       if (!v.getAttribute("poster")){
         v.addEventListener("loadedmetadata", () => {
@@ -474,8 +471,12 @@
       entries.forEach(entry => {
         const vid = entry.target.querySelector("video");
         if (!vid) return;
-        if (entry.isIntersecting) vid.play().catch(()=>{});
-        else vid.pause();
+        if (entry.isIntersecting){
+          if (audioUnlocked) vid.muted = false;
+          vid.play().catch(()=>{});
+        } else {
+          vid.pause();
+        }
       });
     }, { threshold: 0.6 });
     feedEl.querySelectorAll(".video-card").forEach(card => observer.observe(card));
@@ -525,6 +526,17 @@
   document.addEventListener("click", () => {
     document.querySelectorAll(".options-menu.show").forEach(m => m.classList.remove("show"));
   });
+
+  // по первому клику пользователя где-либо на странице браузер разрешает звук —
+  // с этого момента все видео будут проигрываться со звуком автоматически
+  document.addEventListener("click", () => {
+    if (audioUnlocked) return;
+    audioUnlocked = true;
+    document.querySelectorAll(".video-card video").forEach(vid => {
+      vid.muted = false;
+      if (!vid.paused) vid.play().catch(()=>{});
+    });
+  }, { once: true });
 
   (async function init(){
     await cleanupOldVideos();

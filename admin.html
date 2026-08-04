@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LikeTok — Админ</title>
+<style>
+  :root{
+    --pink:#fe2c55;
+    --cyan:#25f4ee;
+    --dark:#161823;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    min-height:100vh;
+    font-family:'Segoe UI', Arial, sans-serif;
+    background:#f4f4f7;
+    padding-bottom:60px;
+  }
+  header{
+    background:var(--dark);
+    color:#fff;
+    padding:16px 20px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+  }
+  header .logo span:first-child{ color:var(--pink); font-weight:800; }
+  header .logo span:last-child{ color:var(--cyan); font-weight:800; }
+  header button{
+    background:rgba(255,255,255,.12);
+    border:1px solid rgba(255,255,255,.3);
+    color:#fff;
+    padding:7px 14px;
+    border-radius:8px;
+    cursor:pointer;
+    font-size:13px;
+  }
+  .wrap{ max-width:900px; margin:20px auto; padding:0 16px; }
+  .tabs{ display:flex; gap:8px; margin-bottom:18px; }
+  .tabbtn{
+    padding:9px 18px;
+    border-radius:10px;
+    border:none;
+    background:#fff;
+    color:#444;
+    font-weight:600;
+    font-size:13px;
+    cursor:pointer;
+    box-shadow:0 2px 6px rgba(0,0,0,0.06);
+  }
+  .tabbtn.active{ background:var(--pink); color:#fff; }
+  .section{ display:none; }
+  .section.active{ display:block; }
+
+  .video-row{
+    background:#fff;
+    border-radius:14px;
+    padding:14px;
+    margin-bottom:12px;
+    display:flex;
+    gap:14px;
+    box-shadow:0 3px 12px rgba(0,0,0,0.06);
+  }
+  .video-row video{
+    width:110px;
+    height:150px;
+    object-fit:cover;
+    border-radius:10px;
+    background:#000;
+    flex-shrink:0;
+  }
+  .video-info{ flex:1; }
+  .video-info .author{ font-weight:700; font-size:14px; }
+  .video-info .caption{ font-size:13px; color:#555; margin-top:4px; }
+  .video-info .meta{ font-size:11px; color:#999; margin-top:6px; }
+  .video-actions{ margin-top:8px; display:flex; gap:8px; flex-wrap:wrap; }
+  .video-actions button{
+    border:none;
+    border-radius:8px;
+    padding:7px 12px;
+    font-size:12px;
+    cursor:pointer;
+    color:#fff;
+  }
+  .btn-del{ background:#d64545; }
+  .btn-ban-user{ background:#8a4fd6; }
+  .comments-mini{ margin-top:10px; font-size:12px; color:#666; }
+  .comments-mini .c{ padding:4px 0; border-top:1px solid #eee; display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .comments-mini .c button{
+    background:#eee;
+    border:none;
+    border-radius:6px;
+    padding:3px 8px;
+    font-size:11px;
+    cursor:pointer;
+  }
+
+  .user-row{
+    background:#fff;
+    border-radius:14px;
+    padding:14px 16px;
+    margin-bottom:10px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    box-shadow:0 3px 12px rgba(0,0,0,0.06);
+    flex-wrap:wrap;
+    gap:10px;
+  }
+  .user-row .name{ font-weight:700; }
+  .user-row .status{ font-size:12px; margin-top:2px; }
+  .status.ok{ color:#1fa774; }
+  .status.banned{ color:#d64545; }
+  .user-actions{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .user-actions select, .user-actions button{
+    padding:7px 10px;
+    border-radius:8px;
+    border:1px solid #ddd;
+    font-size:12px;
+  }
+  .user-actions button{
+    background:var(--dark);
+    color:#fff;
+    border:none;
+    cursor:pointer;
+  }
+  .user-actions button.unban{ background:#1fa774; }
+  .empty{ text-align:center; color:#999; padding:30px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><span>Like</span><span>Tok</span> · Админ</div>
+  <button id="logoutBtn">Выйти</button>
+</header>
+
+<div class="wrap">
+  <div class="tabs">
+    <button class="tabbtn active" data-tab="videos">Видео</button>
+    <button class="tabbtn" data-tab="users">Пользователи</button>
+  </div>
+
+  <div class="section active" id="section-videos"></div>
+  <div class="section" id="section-users"></div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script>
+  if (sessionStorage.getItem("liketok_role") !== "admin" || !sessionStorage.getItem("liketok_token")){
+    window.location.href = "index.html";
+  }
+  document.getElementById("logoutBtn").addEventListener("click", () => {
+    sessionStorage.clear();
+    window.location.href = "index.html";
+  });
+
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+  const videosRef = db.ref("videos");
+  const usersRef = db.ref("users");
+
+  document.querySelectorAll(".tabbtn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tabbtn").forEach(b => b.classList.remove("active"));
+      document.querySelectorAll(".section").forEach(s => s.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById("section-" + btn.dataset.tab).classList.add("active");
+    });
+  });
+
+  function timeAgo(ts){
+    const diffMin = Math.floor((Date.now() - ts) / 60000);
+    if (diffMin < 1) return "только что";
+    if (diffMin < 60) return diffMin + " мин назад";
+    const diffH = Math.floor(diffMin / 60);
+    if (diffH < 24) return diffH + " ч назад";
+    return Math.floor(diffH/24) + " дн назад";
+  }
+  function escapeHtml(str){
+    const div = document.createElement("div");
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // --- ВИДЕО ---
+  function renderVideos(videos){
+    const el = document.getElementById("section-videos");
+    const list = Object.entries(videos || {}).map(([id,v]) => ({id,...v})).sort((a,b)=>b.createdAt-a.createdAt);
+    if (list.length === 0){
+      el.innerHTML = '<div class="empty">Видео пока нет</div>';
+      return;
+    }
+    el.innerHTML = list.map(v => {
+      const likeCount = v.likes ? Object.keys(v.likes).length : 0;
+      const comments = v.comments ? Object.entries(v.comments).map(([cid,c])=>({cid,...c})) : [];
+      return `
+        <div class="video-row" data-id="${v.id}">
+          <video src="${v.videoData}" muted></video>
+          <div class="video-info">
+            <div class="author">@${v.author}</div>
+            ${v.caption ? `<div class="caption">${escapeHtml(v.caption)}</div>` : ""}
+            <div class="meta">${timeAgo(v.createdAt)} · ❤️ ${likeCount} · 💬 ${comments.length}</div>
+            <div class="video-actions">
+              <button class="btn-del" data-action="delVideo" data-id="${v.id}">Удалить видео</button>
+              <button class="btn-ban-user" data-action="banAuthor" data-user="${v.author}">Забанить @${v.author}</button>
+            </div>
+            ${comments.length ? `
+              <div class="comments-mini">
+                ${comments.map(c => `
+                  <div class="c">
+                    <span><b>@${c.author}:</b> ${escapeHtml(c.text)}</span>
+                    <button data-action="delComment" data-video="${v.id}" data-comment="${c.cid}">✕</button>
+                  </div>
+                `).join("")}
+              </div>` : ""}
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    el.querySelectorAll("[data-action='delVideo']").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("Удалить это видео?")) return;
+        await videosRef.child(btn.dataset.id).remove();
+      });
+    });
+    el.querySelectorAll("[data-action='delComment']").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        await videosRef.child(btn.dataset.video).child("comments").child(btn.dataset.comment).remove();
+      });
+    });
+    el.querySelectorAll("[data-action='banAuthor']").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const hours = prompt("На сколько часов забанить @" + btn.dataset.user + "? (пусто = навсегда)");
+        if (hours === null) return;
+        const banUntil = hours.trim() === "" ? null : Date.now() + Number(hours)*3600*1000;
+        await usersRef.child(btn.dataset.user).update({ banned: true, banUntil });
+        alert("Пользователь @" + btn.dataset.user + " забанен");
+      });
+    });
+  }
+
+  videosRef.on("value", snap => renderVideos(snap.val()));
+
+  // --- ПОЛЬЗОВАТЕЛИ ---
+  function renderUsers(users){
+    const el = document.getElementById("section-users");
+    const list = Object.entries(users || {}).map(([name,u]) => ({name,...u})).sort((a,b)=>b.createdAt-a.createdAt);
+    if (list.length === 0){
+      el.innerHTML = '<div class="empty">Пользователей пока нет</div>';
+      return;
+    }
+    const now = Date.now();
+    el.innerHTML = list.map(u => {
+      const isBanned = u.banned && (u.banUntil === null || u.banUntil > now);
+      const statusText = isBanned
+        ? ("Забанен до: " + (u.banUntil ? new Date(u.banUntil).toLocaleString("ru-RU") : "навсегда"))
+        : "Активен";
+      return `
+        <div class="user-row" data-user="${u.name}">
+          <div>
+            <div class="name">@${u.name}</div>
+            <div class="status ${isBanned ? "banned" : "ok"}">${statusText}</div>
+          </div>
+          <div class="user-actions">
+            ${isBanned
+              ? `<button class="unban" data-action="unban" data-user="${u.name}">Разбанить</button>`
+              : `
+                <select data-hours="${u.name}">
+                  <option value="1">1 час</option>
+                  <option value="24">24 часа</option>
+                  <option value="168">7 дней</option>
+                  <option value="">Навсегда</option>
+                </select>
+                <button data-action="ban" data-user="${u.name}">Забанить</button>
+              `}
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    el.querySelectorAll("[data-action='ban']").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const select = el.querySelector(`[data-hours="${btn.dataset.user}"]`);
+        const hours = select.value;
+        const banUntil = hours === "" ? null : Date.now() + Number(hours)*3600*1000;
+        await usersRef.child(btn.dataset.user).update({ banned: true, banUntil });
+      });
+    });
+    el.querySelectorAll("[data-action='unban']").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        await usersRef.child(btn.dataset.user).update({ banned: false, banUntil: null });
+      });
+    });
+  }
+
+  usersRef.on("value", snap => renderUsers(snap.val()));
+</script>
+</body>
+</html>

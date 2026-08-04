@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LikeTok — Лента</title>
+<style>
+  :root{
+    --pink:#fe2c55;
+    --cyan:#25f4ee;
+    --dark:#161823;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    min-height:100vh;
+    font-family:'Segoe UI', Arial, sans-serif;
+    background:var(--dark);
+    color:#fff;
+    padding-bottom:90px;
+  }
+  header{
+    position:sticky;
+    top:0;
+    z-index:5;
+    background:var(--dark);
+    padding:14px 16px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    border-bottom:1px solid #2a2c3a;
+  }
+  .logo{ font-weight:800; font-size:18px; }
+  .logo span:first-child{ color:var(--pink); }
+  .logo span:last-child{ color:var(--cyan); }
+  .who{ font-size:12px; color:#aaa; display:flex; align-items:center; gap:10px; }
+  .who button{
+    background:none;
+    border:1px solid #444;
+    color:#ccc;
+    padding:5px 10px;
+    border-radius:8px;
+    font-size:11px;
+    cursor:pointer;
+  }
+
+  .wrap{ max-width:420px; margin:0 auto; padding:0 12px; }
+
+  .upload-card{
+    background:#1f2130;
+    border-radius:16px;
+    padding:16px;
+    margin:14px 0;
+    text-align:center;
+  }
+  .limit-text{ font-size:12px; color:#999; margin-bottom:10px; }
+  video#preview, video#recPreview{
+    width:100%;
+    max-height:420px;
+    border-radius:12px;
+    background:#000;
+    display:none;
+  }
+  .rec-controls{
+    display:flex;
+    gap:10px;
+    margin-top:12px;
+    justify-content:center;
+    flex-wrap:wrap;
+  }
+  button.pill{
+    border:none;
+    border-radius:20px;
+    padding:10px 18px;
+    font-size:13px;
+    font-weight:600;
+    cursor:pointer;
+    color:#fff;
+  }
+  .btn-start{ background:var(--pink); }
+  .btn-stop{ background:#555; }
+  .btn-post{ background:linear-gradient(90deg,var(--pink),#ff5c7a); }
+  .btn-cancel{ background:#333; }
+  button.pill:disabled{ opacity:.4; cursor:not-allowed; }
+  input#caption{
+    width:100%;
+    margin-top:10px;
+    padding:10px 12px;
+    border-radius:10px;
+    border:1px solid #333;
+    background:#14151f;
+    color:#fff;
+    font-size:14px;
+  }
+  .rec-timer{
+    font-size:13px;
+    color:var(--pink);
+    font-weight:700;
+    margin-top:6px;
+  }
+
+  .video-card{
+    background:#1f2130;
+    border-radius:16px;
+    overflow:hidden;
+    margin-bottom:18px;
+  }
+  .video-card video{
+    width:100%;
+    max-height:520px;
+    display:block;
+    background:#000;
+  }
+  .video-meta{
+    padding:12px 14px;
+  }
+  .video-meta .author{ font-weight:700; font-size:14px; }
+  .video-meta .caption{ font-size:13px; color:#ccc; margin-top:4px; }
+  .video-meta .time{ font-size:11px; color:#777; margin-top:4px; }
+  .actions{
+    display:flex;
+    align-items:center;
+    gap:16px;
+    padding:0 14px 12px;
+  }
+  .like-btn{
+    background:none;
+    border:none;
+    color:#ccc;
+    font-size:14px;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+  .like-btn.liked{ color:var(--pink); }
+  .comment-toggle{
+    background:none;
+    border:none;
+    color:#ccc;
+    font-size:14px;
+    cursor:pointer;
+  }
+  .comments{
+    display:none;
+    padding:0 14px 14px;
+    border-top:1px solid #2a2c3a;
+  }
+  .comments.show{ display:block; }
+  .comment{
+    font-size:13px;
+    padding:8px 0;
+    border-bottom:1px solid #262838;
+  }
+  .comment b{ color:var(--cyan); }
+  .comment-input-row{
+    display:flex;
+    gap:8px;
+    margin-top:10px;
+  }
+  .comment-input-row input{
+    flex:1;
+    padding:8px 10px;
+    border-radius:8px;
+    border:1px solid #333;
+    background:#14151f;
+    color:#fff;
+    font-size:13px;
+  }
+  .comment-input-row button{
+    background:var(--pink);
+    border:none;
+    color:#fff;
+    padding:0 14px;
+    border-radius:8px;
+    font-size:13px;
+    cursor:pointer;
+  }
+  .empty{
+    text-align:center;
+    color:#666;
+    padding:40px 0;
+    font-size:14px;
+  }
+  .banned-screen{
+    text-align:center;
+    padding:80px 20px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><span>Like</span><span>Tok</span></div>
+  <div class="who">
+    <span id="whoami"></span>
+    <button id="logoutBtn">Выйти</button>
+  </div>
+</header>
+
+<div class="wrap" id="app">
+
+  <div class="upload-card">
+    <div class="limit-text" id="limitText">Загрузка...</div>
+    <video id="recPreview" autoplay muted playsinline></video>
+    <video id="preview" controls playsinline></video>
+    <div class="rec-timer" id="recTimer"></div>
+    <div class="rec-controls" id="recControls">
+      <button class="pill btn-start" id="startBtn">🎥 Записать видео</button>
+    </div>
+    <input type="text" id="caption" placeholder="Подпись к видео..." style="display:none;">
+    <div class="rec-controls" id="postControls" style="display:none;">
+      <button class="pill btn-post" id="postBtn">Опубликовать</button>
+      <button class="pill btn-cancel" id="cancelBtn">Отмена</button>
+    </div>
+  </div>
+
+  <div id="feed"></div>
+
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script>
+  const username = sessionStorage.getItem("liketok_user");
+  if (!username || !sessionStorage.getItem("liketok_token")){
+    window.location.href = "index.html";
+  }
+
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+  const usersRef = db.ref("users");
+  const videosRef = db.ref("videos");
+
+  const DAILY_LIMIT = 8;
+  const MAX_TOTAL_BYTES = 15 * 1024 * 1024; // ~15MB суммарно на все видео в базе
+  const MAX_RECORD_MS = 15000; // 15 секунд макс
+  const VIDEO_LIFETIME_MS = 24 * 60 * 60 * 1000; // 24 часа
+
+  document.getElementById("whoami").textContent = "@" + username;
+  document.getElementById("logoutBtn").addEventListener("click", () => {
+    sessionStorage.clear();
+    window.location.href = "index.html";
+  });
+
+  let currentVideos = {};
+  let recordedBlob = null;
+  let mediaRecorder = null;
+  let mediaStream = null;
+  let recordTimeout = null;
+  let recordInterval = null;
+
+  // --- проверка бана при заходе ---
+  async function checkBan(){
+    const snap = await usersRef.child(username).get();
+    if (!snap.exists()) { window.location.href = "index.html"; return; }
+    const u = snap.val();
+    const now = Date.now();
+    if (u.banned && (u.banUntil === null || u.banUntil > now)){
+      const until = u.banUntil ? new Date(u.banUntil).toLocaleString("ru-RU") : "навсегда";
+      document.getElementById("app").innerHTML = `
+        <div class="banned-screen">
+          <h2>🚫 Аккаунт заблокирован</h2>
+          <p>До: ${until}</p>
+        </div>`;
+      throw new Error("banned");
+    }
+  }
+
+  // --- запись видео ---
+  const startBtn = document.getElementById("startBtn");
+  const recPreview = document.getElementById("recPreview");
+  const preview = document.getElementById("preview");
+  const recTimer = document.getElementById("recTimer");
+  const recControls = document.getElementById("recControls");
+  const postControls = document.getElementById("postControls");
+  const captionInput = document.getElementById("caption");
+
+  startBtn.addEventListener("click", async () => {
+    try{
+      mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 480, height: 854, facingMode: "user" },
+        audio: true
+      });
+    } catch(e){
+      alert("Не удалось получить доступ к камере: " + e.message);
+      return;
+    }
+    recPreview.srcObject = mediaStream;
+    recPreview.style.display = "block";
+    preview.style.display = "none";
+
+    let chunks = [];
+    let mimeType = "video/webm;codecs=vp8,opus";
+    if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = "video/webm";
+    mediaRecorder = new MediaRecorder(mediaStream, { mimeType, videoBitsPerSecond: 700000 });
+    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+    mediaRecorder.onstop = () => {
+      recordedBlob = new Blob(chunks, { type: "video/webm" });
+      recPreview.style.display = "none";
+      preview.src = URL.createObjectURL(recordedBlob);
+      preview.style.display = "block";
+      captionInput.style.display = "block";
+      postControls.style.display = "flex";
+      recControls.style.display = "none";
+      recTimer.textContent = "";
+      mediaStream.getTracks().forEach(t => t.stop());
+    };
+    mediaRecorder.start();
+
+    recControls.innerHTML = `<button class="pill btn-stop" id="stopBtn">⏹ Остановить</button>`;
+    document.getElementById("stopBtn").addEventListener("click", stopRecording);
+
+    let secondsLeft = MAX_RECORD_MS / 1000;
+    recTimer.textContent = `Запись: ${secondsLeft}s`;
+    recordInterval = setInterval(() => {
+      secondsLeft--;
+      recTimer.textContent = `Запись: ${secondsLeft}s`;
+      if (secondsLeft <= 0) clearInterval(recordInterval);
+    }, 1000);
+    recordTimeout = setTimeout(stopRecording, MAX_RECORD_MS);
+  });
+
+  function stopRecording(){
+    clearTimeout(recordTimeout);
+    clearInterval(recordInterval);
+    if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+  }
+
+  document.getElementById("cancelBtn").addEventListener("click", resetUploadCard);
+
+  function resetUploadCard(){
+    recordedBlob = null;
+    preview.style.display = "none";
+    preview.src = "";
+    captionInput.value = "";
+    captionInput.style.display = "none";
+    postControls.style.display = "none";
+    recControls.style.display = "flex";
+    recControls.innerHTML = `<button class="pill btn-start" id="startBtn2">🎥 Записать видео</button>`;
+    document.getElementById("startBtn2").addEventListener("click", () => startBtn.click());
+  }
+
+  function blobToBase64(blob){
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function countTodayUploads(){
+    const snap = await videosRef.orderByChild("author").equalTo(username).get();
+    if (!snap.exists()) return 0;
+    const now = Date.now();
+    let count = 0;
+    snap.forEach(child => {
+      const v = child.val();
+      if (now - v.createdAt < 24*60*60*1000) count++;
+    });
+    return count;
+  }
+
+  async function updateLimitText(){
+    const count = await countTodayUploads();
+    const left = Math.max(0, DAILY_LIMIT - count);
+    document.getElementById("limitText").textContent =
+      `Сегодня загружено: ${count} / ${DAILY_LIMIT}. Осталось: ${left}`;
+    startBtn.disabled = left <= 0;
+  }
+
+  async function freeUpSpaceIfNeeded(newBytes){
+    const snap = await videosRef.get();
+    if (!snap.exists()) return;
+    let entries = [];
+    let totalBytes = newBytes;
+    snap.forEach(child => {
+      const v = child.val();
+      const size = v.videoData ? v.videoData.length : 0;
+      totalBytes += size;
+      entries.push({ id: child.key, createdAt: v.createdAt, size });
+    });
+    if (totalBytes <= MAX_TOTAL_BYTES) return;
+    entries.sort((a,b) => a.createdAt - b.createdAt); // старые первыми
+    for (const e of entries){
+      if (totalBytes <= MAX_TOTAL_BYTES) break;
+      await videosRef.child(e.id).remove();
+      totalBytes -= e.size;
+    }
+  }
+
+  document.getElementById("postBtn").addEventListener("click", async () => {
+    if (!recordedBlob) return;
+    const count = await countTodayUploads();
+    if (count >= DAILY_LIMIT){
+      alert("Дневной лимит видео исчерпан (" + DAILY_LIMIT + " в день)");
+      return;
+    }
+    const postBtn = document.getElementById("postBtn");
+    postBtn.disabled = true;
+    postBtn.textContent = "Публикация...";
+
+    try{
+      const base64 = await blobToBase64(recordedBlob);
+      await freeUpSpaceIfNeeded(base64.length);
+      await videosRef.push({
+        author: username,
+        videoData: base64,
+        caption: captionInput.value.trim(),
+        createdAt: Date.now(),
+        likes: {},
+        comments: {}
+      });
+      resetUploadCard();
+      updateLimitText();
+    } catch(e){
+      alert("Ошибка при публикации: " + e.message + "\n(возможно, видео получилось слишком большим — попробуйте покороче)");
+    } finally {
+      postBtn.disabled = false;
+      postBtn.textContent = "Опубликовать";
+    }
+  });
+
+  // --- лента ---
+  function timeAgo(ts){
+    const diffMin = Math.floor((Date.now() - ts) / 60000);
+    if (diffMin < 1) return "только что";
+    if (diffMin < 60) return diffMin + " мин назад";
+    const diffH = Math.floor(diffMin / 60);
+    if (diffH < 24) return diffH + " ч назад";
+    return Math.floor(diffH/24) + " дн назад";
+  }
+
+  async function cleanupOldVideos(){
+    const snap = await videosRef.get();
+    if (!snap.exists()) return;
+    const now = Date.now();
+    const toDelete = [];
+    snap.forEach(child => {
+      const v = child.val();
+      if (now - v.createdAt > VIDEO_LIFETIME_MS) toDelete.push(child.key);
+    });
+    for (const id of toDelete){
+      await videosRef.child(id).remove();
+    }
+  }
+
+  function renderFeed(){
+    const feedEl = document.getElementById("feed");
+    const list = Object.entries(currentVideos)
+      .map(([id, v]) => ({ id, ...v }))
+      .sort((a,b) => b.createdAt - a.createdAt);
+
+    if (list.length === 0){
+      feedEl.innerHTML = '<div class="empty">Пока нет видео. Будьте первым! 🎬</div>';
+      return;
+    }
+
+    feedEl.innerHTML = list.map(v => {
+      const likes = v.likes || {};
+      const likeCount = Object.keys(likes).length;
+      const liked = !!likes[username];
+      const comments = v.comments ? Object.entries(v.comments).map(([cid,c]) => ({cid,...c})) : [];
+      comments.sort((a,b) => a.createdAt - b.createdAt);
+      return `
+        <div class="video-card" data-id="${v.id}">
+          <video src="${v.videoData}" controls playsinline loop></video>
+          <div class="video-meta">
+            <div class="author">@${v.author}</div>
+            ${v.caption ? `<div class="caption">${escapeHtml(v.caption)}</div>` : ""}
+            <div class="time">${timeAgo(v.createdAt)}</div>
+          </div>
+          <div class="actions">
+            <button class="like-btn ${liked ? "liked" : ""}" data-action="like" data-id="${v.id}">
+              ${liked ? "❤️" : "🤍"} ${likeCount}
+            </button>
+            <button class="comment-toggle" data-action="toggleComments" data-id="${v.id}">💬 ${comments.length}</button>
+          </div>
+          <div class="comments" id="comments-${v.id}">
+            ${comments.map(c => `<div class="comment"><b>@${c.author}:</b> ${escapeHtml(c.text)}</div>`).join("") || '<div class="comment" style="color:#666;">Комментариев пока нет</div>'}
+            <div class="comment-input-row">
+              <input type="text" placeholder="Написать комментарий..." data-comment-input="${v.id}">
+              <button data-action="sendComment" data-id="${v.id}">→</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    feedEl.querySelectorAll("[data-action='like']").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const id = btn.dataset.id;
+        const likeRef = videosRef.child(id).child("likes").child(username);
+        const snap = await likeRef.get();
+        if (snap.exists()) await likeRef.remove();
+        else await likeRef.set(true);
+      });
+    });
+
+    feedEl.querySelectorAll("[data-action='toggleComments']").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.getElementById("comments-" + btn.dataset.id).classList.toggle("show");
+      });
+    });
+
+    feedEl.querySelectorAll("[data-action='sendComment']").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const id = btn.dataset.id;
+        const input = feedEl.querySelector(`[data-comment-input="${id}"]`);
+        const text = input.value.trim();
+        if (!text) return;
+        await videosRef.child(id).child("comments").push({
+          author: username,
+          text,
+          createdAt: Date.now()
+        });
+        input.value = "";
+      });
+    });
+  }
+
+  function escapeHtml(str){
+    const div = document.createElement("div");
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  (async function init(){
+    try{
+      await checkBan();
+    } catch(e){ return; }
+
+    await cleanupOldVideos();
+    updateLimitText();
+
+    videosRef.on("value", (snap) => {
+      currentVideos = snap.val() || {};
+      renderFeed();
+    });
+  })();
+</script>
+</body>
+</html>

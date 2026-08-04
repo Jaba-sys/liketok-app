@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LikeTok</title>
+<style>
+  :root{
+    --pink:#fe2c55;
+    --cyan:#25f4ee;
+    --dark:#161823;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-family:'Segoe UI', Arial, sans-serif;
+    background:var(--dark);
+    padding:16px;
+  }
+  .card{
+    background:#fff;
+    padding:32px 28px;
+    border-radius:20px;
+    box-shadow:0 20px 50px rgba(0,0,0,0.4);
+    width:100%;
+    max-width:360px;
+    text-align:center;
+  }
+  .logo{
+    font-size:30px;
+    font-weight:800;
+    margin-bottom:4px;
+  }
+  .logo span:first-child{ color:var(--pink); }
+  .logo span:last-child{ color:var(--cyan); text-shadow:-2px 0 var(--pink); }
+  .sub{
+    color:#888;
+    font-size:13px;
+    margin-bottom:20px;
+  }
+  .tabs{
+    display:flex;
+    background:#f1f1f3;
+    border-radius:10px;
+    padding:4px;
+    margin-bottom:18px;
+  }
+  .tab{
+    flex:1;
+    padding:9px;
+    border-radius:8px;
+    font-size:14px;
+    font-weight:600;
+    color:#666;
+    cursor:pointer;
+  }
+  .tab.active{
+    background:#fff;
+    color:var(--dark);
+    box-shadow:0 2px 6px rgba(0,0,0,0.08);
+  }
+  input[type=text], input[type=password]{
+    width:100%;
+    padding:12px 14px;
+    border:2px solid #eee;
+    border-radius:10px;
+    font-size:15px;
+    outline:none;
+    margin-bottom:12px;
+  }
+  input:focus{ border-color:var(--pink); }
+  button.main-btn{
+    width:100%;
+    padding:12px;
+    border:none;
+    border-radius:10px;
+    background:linear-gradient(90deg, var(--pink), #ff5c7a);
+    color:#fff;
+    font-size:15px;
+    font-weight:700;
+    cursor:pointer;
+    margin-top:4px;
+  }
+  button.main-btn:hover{ filter:brightness(1.06); }
+  .err{
+    color:#d64545;
+    font-size:13px;
+    height:18px;
+    margin-top:10px;
+  }
+  .admin-link{
+    display:block;
+    margin-top:26px;
+    font-size:11px;
+    color:#bbb;
+    text-decoration:none;
+    cursor:pointer;
+  }
+  .admin-link:hover{ color:#999; }
+  .admin-box{
+    display:none;
+    margin-top:10px;
+  }
+  .admin-box.show{ display:block; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo"><span>Like</span><span>Tok</span></div>
+    <div class="sub">Снимай. Смотри. Лайкай.</div>
+
+    <div class="tabs">
+      <div class="tab active" id="tabLogin">Войти</div>
+      <div class="tab" id="tabRegister">Регистрация</div>
+    </div>
+
+    <form id="authForm" autocomplete="off">
+      <input type="text" id="username" placeholder="Имя пользователя" required>
+      <input type="password" id="password" placeholder="Пароль" required>
+      <button type="submit" class="main-btn" id="submitBtn">Войти</button>
+      <div class="err" id="err"></div>
+    </form>
+
+    <a class="admin-link" id="adminToggle">Войти как администратор</a>
+    <div class="admin-box" id="adminBox">
+      <input type="password" id="adminPwd" placeholder="Пароль администратора">
+      <button class="main-btn" id="adminBtn" style="background:linear-gradient(90deg,#333,#555);">Войти в админ-панель</button>
+      <div class="err" id="adminErr"></div>
+    </div>
+  </div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script>
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+
+  // хеш пароля администратора — сам пароль в коде не хранится
+  const ADMIN_HASH = "f5543e1d4cc58dc1baeea9655e45393fe7f876c6a86f6644ab3a018db49ee334";
+
+  async function sha256(text){
+    const enc = new TextEncoder().encode(text);
+    const buf = await crypto.subtle.digest("SHA-256", enc);
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,"0")).join("");
+  }
+
+  let mode = "login"; // login | register
+  const tabLogin = document.getElementById("tabLogin");
+  const tabRegister = document.getElementById("tabRegister");
+  const submitBtn = document.getElementById("submitBtn");
+
+  tabLogin.addEventListener("click", () => {
+    mode = "login";
+    tabLogin.classList.add("active");
+    tabRegister.classList.remove("active");
+    submitBtn.textContent = "Войти";
+    document.getElementById("err").textContent = "";
+  });
+  tabRegister.addEventListener("click", () => {
+    mode = "register";
+    tabRegister.classList.add("active");
+    tabLogin.classList.remove("active");
+    submitBtn.textContent = "Зарегистрироваться";
+    document.getElementById("err").textContent = "";
+  });
+
+  document.getElementById("authForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errEl = document.getElementById("err");
+    errEl.textContent = "";
+    const username = document.getElementById("username").value.trim();
+    const password = document.getElementById("password").value;
+
+    if (!username || !password){
+      errEl.textContent = "Заполните оба поля";
+      return;
+    }
+    if (!/^[a-zA-Zа-яА-Я0-9_]{3,20}$/.test(username)){
+      errEl.textContent = "Имя: 3-20 символов, без пробелов";
+      return;
+    }
+
+    const pwdHash = await sha256(password);
+    const userRef = db.ref("users/" + username);
+    const snap = await userRef.get();
+
+    if (mode === "register"){
+      if (snap.exists()){
+        errEl.textContent = "Это имя уже занято";
+        return;
+      }
+      await userRef.set({
+        passwordHash: pwdHash,
+        createdAt: Date.now(),
+        banned: false,
+        banUntil: null
+      });
+      loginSuccess(username);
+    } else {
+      if (!snap.exists()){
+        errEl.textContent = "Пользователь не найден";
+        return;
+      }
+      const user = snap.val();
+      if (user.passwordHash !== pwdHash){
+        errEl.textContent = "Неверный пароль";
+        return;
+      }
+      // проверка бана
+      const now = Date.now();
+      if (user.banned && (user.banUntil === null || user.banUntil > now)){
+        const until = user.banUntil ? new Date(user.banUntil).toLocaleString("ru-RU") : "навсегда";
+        errEl.textContent = "Аккаунт заблокирован до: " + until;
+        return;
+      }
+      loginSuccess(username);
+    }
+  });
+
+  function loginSuccess(username){
+    sessionStorage.setItem("liketok_user", username);
+    sessionStorage.setItem("liketok_token", crypto.randomUUID ? crypto.randomUUID() : Date.now()+"-"+Math.random());
+    window.location.href = "feed.html";
+  }
+
+  // --- скрытый вход администратора ---
+  const adminToggle = document.getElementById("adminToggle");
+  const adminBox = document.getElementById("adminBox");
+  adminToggle.addEventListener("click", () => {
+    adminBox.classList.toggle("show");
+  });
+
+  document.getElementById("adminBtn").addEventListener("click", async () => {
+    const errEl = document.getElementById("adminErr");
+    errEl.textContent = "";
+    const pwd = document.getElementById("adminPwd").value;
+    const hash = await sha256(pwd);
+    if (hash === ADMIN_HASH){
+      sessionStorage.setItem("liketok_role", "admin");
+      sessionStorage.setItem("liketok_token", crypto.randomUUID ? crypto.randomUUID() : Date.now()+"-"+Math.random());
+      window.location.href = "admin.html";
+    } else {
+      errEl.textContent = "Неверный пароль администратора";
+    }
+  });
+</script>
+</body>
+</html>

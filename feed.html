@@ -134,6 +134,7 @@
   }
   .side-btn .icon{ font-size:26px; line-height:1; }
   .side-btn.liked .icon{ color:var(--pink); }
+  .side-btn.view-count{ cursor:default; }
 
   .options-btn{
     position:absolute;
@@ -324,6 +325,14 @@
   </div>
 </div>
 
+<div class="comments-sheet" id="viewersSheet">
+  <div class="comments-header">
+    <span>Кто посмотрел</span>
+    <button id="closeViewersBtn">✕</button>
+  </div>
+  <div class="comments-list" id="viewersList"></div>
+</div>
+
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="firebase-config.js"></script>
@@ -408,6 +417,7 @@
     const likeCount = Object.keys(likes).length;
     const liked = !!likes[username];
     const commentCount = v.comments ? Object.keys(v.comments).length : 0;
+    const viewCount = v.views ? Object.keys(v.views).length : 0;
     const isOwn = v.author === username;
     const div = document.createElement("div");
     div.className = "video-card";
@@ -421,6 +431,7 @@
       ${isOwn ? `
         <button class="options-btn" data-action="toggleMenu" data-id="${v.id}">⋮</button>
         <div class="options-menu" id="menu-${v.id}">
+          <button data-action="showViewers" data-id="${v.id}">👁 Кто посмотрел</button>
           <button data-action="deleteOwn" data-id="${v.id}">🗑 Удалить видео</button>
         </div>
       ` : ""}
@@ -438,6 +449,10 @@
           <span class="icon">💬</span>
           <span>${commentCount}</span>
         </button>
+        <div class="side-btn view-count">
+          <span class="icon">👁</span>
+          <span>${viewCount}</span>
+        </div>
       </div>
     `;
     const vid = div.querySelector("video");
@@ -455,16 +470,25 @@
     const likeCount = Object.keys(likes).length;
     const liked = !!likes[username];
     const commentCount = v.comments ? Object.keys(v.comments).length : 0;
+    const viewCount = v.views ? Object.keys(v.views).length : 0;
 
     const likeBtn = card.querySelector("[data-action='like']");
     if (likeBtn){
       likeBtn.classList.toggle("liked", liked);
       likeBtn.innerHTML = `<span class="icon">${liked ? "❤️" : "🤍"}</span><span>${likeCount}</span>`;
     }
+    const viewEl = card.querySelector(".view-count");
+    if (viewEl){
+      viewEl.innerHTML = `<span class="icon">👁</span><span>${viewCount}</span>`;
+    }
     const commentBtn = card.querySelector("[data-action='comments']");
     if (commentBtn){
       commentBtn.innerHTML = `<span class="icon">💬</span><span>${commentCount}</span>`;
     }
+  }
+
+  function recordView(videoId){
+    videosRef.child(videoId).child("views").child(username).set(Date.now());
   }
 
   const feedObserver = new IntersectionObserver((entries) => {
@@ -478,6 +502,10 @@
         if (vid.dataset.started === "1"){
           if (audioUnlocked) vid.muted = false;
           vid.play().catch(()=>{});
+          if (!vid.dataset.viewLogged){
+            vid.dataset.viewLogged = "1";
+            recordView(card.dataset.id);
+          }
         }
       } else {
         vid.pause();
@@ -532,6 +560,10 @@
       vid.muted = false;
       vid.dataset.started = "1";
       vid.play().catch(()=>{});
+      if (!vid.dataset.viewLogged){
+        vid.dataset.viewLogged = "1";
+        recordView(card.dataset.id);
+      }
       audioUnlocked = true;
       // звук разблокирован на всю сессию — прячем оверлей у всех карточек,
       // остальные видео дальше по ленте будут запускаться сами, без повторного нажатия
@@ -570,6 +602,13 @@
       const wasOpen = menu.classList.contains("show");
       document.querySelectorAll(".options-menu.show").forEach(m => m.classList.remove("show"));
       if (!wasOpen) menu.classList.add("show");
+      return;
+    }
+
+    const viewersBtn = e.target.closest("[data-action='showViewers']");
+    if (viewersBtn){
+      e.stopPropagation();
+      openViewers(viewersBtn.dataset.id);
       return;
     }
 
@@ -623,6 +662,31 @@
     input.value = "";
   }
 
+  const viewersSheet = document.getElementById("viewersSheet");
+  const viewersList = document.getElementById("viewersList");
+  let activeViewersVideoId = null;
+
+  function openViewers(videoId){
+    activeViewersVideoId = videoId;
+    renderViewers();
+    viewersSheet.classList.add("show");
+  }
+  document.getElementById("closeViewersBtn").addEventListener("click", () => {
+    viewersSheet.classList.remove("show");
+    activeViewersVideoId = null;
+  });
+
+  function renderViewers(){
+    if (!activeViewersVideoId) return;
+    const v = currentVideos[activeViewersVideoId];
+    if (!v) { viewersList.innerHTML = ""; return; }
+    const views = v.views ? Object.entries(v.views) : [];
+    views.sort((a,b) => b[1] - a[1]); // недавно посмотревшие сверху
+    viewersList.innerHTML = views.length
+      ? views.map(([name, ts]) => `<div class="comment"><b>@${name}</b> — ${timeAgo(ts)}</div>`).join("")
+      : '<div class="comment" style="color:#666;">Пока никто не посмотрел</div>';
+  }
+
   document.addEventListener("click", () => {
     document.querySelectorAll(".options-menu.show").forEach(m => m.classList.remove("show"));
   });
@@ -646,6 +710,7 @@
       currentVideos = snap.val() || {};
       renderFeed();
       if (activeCommentVideoId) renderComments();
+      if (activeViewersVideoId) renderViewers();
     });
   })();
 </script>

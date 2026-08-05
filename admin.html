@@ -198,6 +198,7 @@
     }
     el.innerHTML = list.map(v => {
       const likeCount = v.likes ? Object.keys(v.likes).length : 0;
+      const viewCount = v.views ? Object.keys(v.views).length : 0;
       const comments = v.comments ? Object.entries(v.comments).map(([cid,c])=>({cid,...c})) : [];
       const authorData = currentUsersData[v.author];
       const now = Date.now();
@@ -208,7 +209,7 @@
           <div class="video-info">
             <div class="author">@${v.author}</div>
             ${v.caption ? `<div class="caption">${escapeHtml(v.caption)}</div>` : ""}
-            <div class="meta">${timeAgo(v.createdAt)} · ❤️ ${likeCount} · 💬 ${comments.length}</div>
+            <div class="meta">${timeAgo(v.createdAt)} · 👁 ${viewCount} · ❤️ ${likeCount} · 💬 ${comments.length}</div>
             <div class="video-actions">
               <button class="btn-del" data-action="delVideo" data-id="${v.id}">Удалить видео</button>
               ${authorBanned
@@ -268,6 +269,14 @@
       el.innerHTML = '<div class="empty">Пользователей пока нет</div>';
       return;
     }
+    // сохраняем текущий выбор в выпадающих списках "на сколько забанить" —
+    // иначе случайное обновление данных (например, кто-то зарегистрировался)
+    // сбрасывает выбор обратно на первый пункт до того, как вы нажали "Забанить"
+    const savedSelections = {};
+    el.querySelectorAll("select[data-hours]").forEach(sel => {
+      savedSelections[sel.dataset.hours] = sel.value;
+    });
+
     const now = Date.now();
     el.innerHTML = list.map(u => {
       const isBanned = u.banned && (u.banUntil === null || u.banUntil > now);
@@ -296,6 +305,13 @@
         </div>
       `;
     }).join("");
+
+    // восстанавливаем выбор пользователя в выпадающих списках после перерисовки
+    el.querySelectorAll("select[data-hours]").forEach(sel => {
+      if (savedSelections[sel.dataset.hours] !== undefined){
+        sel.value = savedSelections[sel.dataset.hours];
+      }
+    });
 
     el.querySelectorAll("[data-action='ban']").forEach(btn => {
       btn.addEventListener("click", async () => {

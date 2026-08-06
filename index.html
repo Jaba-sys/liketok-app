@@ -220,7 +220,7 @@
   function loginSuccess(username){
     sessionStorage.setItem("liketok_user", username);
     sessionStorage.setItem("liketok_token", crypto.randomUUID ? crypto.randomUUID() : Date.now()+"-"+Math.random());
-    window.location.href = "feed.html";
+    window.location.href = "feed";
   }
 
   // --- скрытый вход администратора ---
